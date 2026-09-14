@@ -1,0 +1,45 @@
+{
+  "expo": {
+    "name": "Conta Lanche",
+    "slug": "conta-lanche",
+    "scheme": "contalanche",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "plugins": [
+      "expo-router",
+      [
+        "expo-sqlite",
+        {
+          "enableFTS": false
+        }
+      ],
+      "expo-system-ui",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Permita o acesso às fotos para anexar a imagem de um lanche.",
+          "cameraPermission": "Permita o uso da câmera para fotografar um lanche.",
+          "microphonePermission": false
+        }
+      ]
+    ],
+    "android": {
+      "package": "br.com.contalanche.app",
+      "softwareKeyboardLayoutMode": "resize"
+    },
+    "ios": {
+      "bundleIdentifier": "br.com.contalanche.app"
+    },
+    "experiments": {
+      "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "8b972db8-6b20-480b-9393-67d1db72c68d"
+      }
+    }
+  }
+}

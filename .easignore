@@ -1,0 +1,15 @@
+node_modules/
+.expo/
+dist/
+web-build/
+coverage/
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+*.apk
+*.tsbuildinfo
+npm-debug.log*
+yarn-debug.log*
+.eas-auth-bind.cjs
