@@ -1,13 +1,16 @@
-import { Directory, File, Paths } from 'expo-file-system';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as ImageManipulator from 'expo-image-manipulator';
 
 const folder = `${FileSystem.documentDirectory ?? ''}photos/`;
-const photosDirectory = new Directory(Paths.document, 'photos');
+
+async function ensurePhotosDirectory() {
+  const info = await FileSystem.getInfoAsync(folder);
+  if (!info.exists) await FileSystem.makeDirectoryAsync(folder, { intermediates: true });
+}
 
 export async function persistPhoto(sourceUri: string): Promise<string> {
   try {
-    photosDirectory.create({ intermediates: true, idempotent: true });
+    await ensurePhotosDirectory();
 
     // Image compression is only an optimization; the original photo can still be saved
     // if the optional manipulator API is unavailable in a device build.
@@ -21,9 +24,9 @@ export async function persistPhoto(sourceUri: string): Promise<string> {
       sourceToCopy = compressed.uri;
     }
 
-    const target = new File(photosDirectory, `lanche_${Date.now()}_${Math.random().toString(36).slice(2, 9)}.jpg`);
-    new File(sourceToCopy).copy(target);
-    return target.uri;
+    const target = `${folder}lanche_${Date.now()}_${Math.random().toString(36).slice(2, 9)}.jpg`;
+    await FileSystem.copyAsync({ from: sourceToCopy, to: target });
+    return target;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     throw new Error(`Nao foi possivel armazenar a foto: ${message}`);
@@ -31,7 +34,7 @@ export async function persistPhoto(sourceUri: string): Promise<string> {
 }
 
 export async function removePhoto(uri: string | null | undefined) {
-  if (uri && uri.startsWith(folder)) new File(uri).delete();
+  if (uri && uri.startsWith(folder)) await FileSystem.deleteAsync(uri, { idempotent: true });
 }
 
 export async function photoAsBase64(uri: string): Promise<string> {
@@ -39,7 +42,7 @@ export async function photoAsBase64(uri: string): Promise<string> {
 }
 
 export async function restorePhoto(base64: string, extension = 'jpg'): Promise<string> {
-  photosDirectory.create({ intermediates: true, idempotent: true });
+  await ensurePhotosDirectory();
   const target = `${folder}backup_${Date.now()}_${Math.random().toString(36).slice(2, 9)}.${extension}`;
   await FileSystem.writeAsStringAsync(target, base64, { encoding: FileSystem.EncodingType.Base64 });
   return target;

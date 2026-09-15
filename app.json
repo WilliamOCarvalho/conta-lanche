@@ -6,6 +6,7 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
+    "icon": "./assets/icon.png",
     "newArchEnabled": true,
     "plugins": [
       "expo-router",
@@ -27,6 +28,10 @@
     ],
     "android": {
       "package": "br.com.contalanche.app",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon-foreground.png",
+        "backgroundColor": "#246B4B"
+      },
       "softwareKeyboardLayoutMode": "resize"
     },
     "ios": {

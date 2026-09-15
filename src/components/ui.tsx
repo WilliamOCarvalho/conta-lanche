@@ -1,11 +1,16 @@
 import type { PropsWithChildren, ReactNode } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View, type StyleProp, type TextInputProps, type ViewStyle } from 'react-native';
-import { SafeAreaView, type Edge } from 'react-native-safe-area-context';
+import { ActivityIndicator, Keyboard, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, TouchableWithoutFeedback, View, type StyleProp, type TextInputProps, type ViewStyle } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets, type Edge } from 'react-native-safe-area-context';
 import { colors, radius } from '../theme';
 
-export function Screen({ children, scroll = true, style, edges = ['top'] }: PropsWithChildren<{ scroll?: boolean; style?: ViewStyle; edges?: Edge[] }>) {
+export function Screen({ children, scroll = true, style, edges = ['top', 'bottom'] }: PropsWithChildren<{ scroll?: boolean; style?: ViewStyle; edges?: Edge[] }>) {
+  const insets = useSafeAreaInsets();
   return <SafeAreaView style={[styles.safe, style]} edges={edges}>
-    {scroll ? <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">{children}</ScrollView> : children}
+    <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
+      <KeyboardAvoidingView style={styles.keyboard} behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={Platform.OS === 'ios' ? insets.top : 0}>
+        {scroll ? <ScrollView contentContainerStyle={[styles.content, { paddingBottom: 28 + insets.bottom }]} keyboardShouldPersistTaps="handled" keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}>{children}</ScrollView> : children}
+      </KeyboardAvoidingView>
+    </TouchableWithoutFeedback>
   </SafeAreaView>;
 }
 export function PageHeader({ title, subtitle, action }: { title: string; subtitle?: string; action?: ReactNode }) {
@@ -28,7 +33,7 @@ export function SectionTitle({ children, trailing }: PropsWithChildren<{ trailin
 export const uiStyles = StyleSheet.create({ row: { flexDirection: 'row', alignItems: 'center' }, spaceBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, flex1: { flex: 1 } });
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.background }, content: { paddingHorizontal: 20, paddingBottom: 28, gap: 18 },
+  safe: { flex: 1, backgroundColor: colors.background }, keyboard: { flex: 1 }, content: { paddingHorizontal: 20, paddingBottom: 28, gap: 18 },
   header: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingTop: 10 }, title: { fontSize: 29, fontWeight: '800', color: colors.ink, letterSpacing: -0.5 }, subtitle: { fontSize: 14, color: colors.muted, marginTop: 4 },
   card: { backgroundColor: colors.surface, borderRadius: radius.md, padding: 18, borderWidth: 1, borderColor: colors.line },
   button: { minHeight: 48, paddingHorizontal: 16, borderRadius: 15, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8 }, button_primary: { backgroundColor: colors.green }, button_secondary: { backgroundColor: colors.greenLight }, button_quiet: { backgroundColor: 'transparent' }, button_danger: { backgroundColor: colors.redLight }, buttonText: { color: '#FFFFFF', fontWeight: '700', fontSize: 15 },

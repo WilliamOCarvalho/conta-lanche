@@ -140,8 +140,16 @@ export async function getPaymentForPurchase(purchaseId: string): Promise<(Paymen
 }
 
 export async function listHolidays(): Promise<Holiday[]> {
-  const db = await getDatabase(); const rows = await db.getAllAsync<{ id: string; date: string; description: string; type: Holiday['type'] }>('SELECT * FROM non_working_days ORDER BY date');
-  return rows;
+  const db = await getDatabase();
+  const rows = await db.getAllAsync<{ id: string | null; date: string | null; description: string | null; type: string | null }>('SELECT id,date,description,type FROM non_working_days ORDER BY date');
+  return rows
+    .filter((row): row is { id: string; date: string; description: string | null; type: string | null } => Boolean(row.id && row.date && /^\d{4}-\d{2}-\d{2}$/.test(row.date)))
+    .map((row) => ({ id: row.id, date: row.date, description: row.description?.trim() || 'Data sem expediente', type: (row.type === 'non_working' ? 'non_working' : 'holiday') as Holiday['type'] }));
+}
+export async function getSetting(key: string, fallback: string): Promise<string> {
+  const db = await getDatabase();
+  const row = await db.getFirstAsync<{ value: string | null }>('SELECT value FROM settings WHERE key=?', key);
+  return row?.value?.trim() || fallback;
 }
 export async function saveHoliday(input: { date: string; description: string; type: Holiday['type'] }) {
   const db = await getDatabase(); await db.runAsync('INSERT OR REPLACE INTO non_working_days (id,date,description,type) VALUES (COALESCE((SELECT id FROM non_working_days WHERE date=?),?),?,?,?)', input.date, newId(), input.date, input.description.trim(), input.type);

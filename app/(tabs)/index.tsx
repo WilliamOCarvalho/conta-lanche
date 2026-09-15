@@ -24,7 +24,9 @@ export default function Dashboard() {
     setNextDate(`${String(date.getDate()).padStart(2, '0')}/${String(date.getMonth() + 1).padStart(2, '0')}`);
   })(); }, [month]);
   useFocusEffect(load);
-  const totals = summarizePurchases(items), sellers = groupPurchasesByVendor(items), recent = allItems.slice(0, 4);
+  const totals = summarizePurchases(items), sellers = groupPurchasesByVendor(items), recent = [...allItems]
+    .sort((a, b) => b.purchaseDate.localeCompare(a.purchaseDate) || b.createdAt.localeCompare(a.createdAt))
+    .slice(0, 3);
   return <Screen>
     <PageHeader title="Conta Lanche" subtitle="Seus lanches, sem perder a conta." action={<Pressable onPress={() => router.push('/purchase/new')} accessibilityLabel="Adicionar compra" style={styles.addButton}><Ionicons name="add" color="#fff" size={25} /></Pressable>} />
     <Card style={styles.hero}>

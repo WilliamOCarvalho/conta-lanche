@@ -4,6 +4,7 @@ import { StatusBar } from 'expo-status-bar';
 import { ActivityIndicator, Text, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { getDatabase } from '../src/db/database';
+import { getSetting } from '../src/db/repository';
 import { brazilianNationalHolidays } from '../src/services/businessDays';
 import { colors } from '../src/theme';
 
@@ -13,8 +14,8 @@ export default function RootLayout() {
     void (async () => {
       try {
         const db = await getDatabase(), year = new Date().getFullYear();
-        const seeded = await db.getFirstAsync<{ value: string }>("SELECT value FROM settings WHERE key='national_holidays_seeded_through'");
-        const lastSeededYear = Number(seeded?.value ?? year - 2);
+        const storedYear = Number(await getSetting('national_holidays_seeded_through', ''));
+        const lastSeededYear = Number.isInteger(storedYear) && storedYear >= 1900 && storedYear <= year + 10 ? storedYear : year - 2;
         await db.withTransactionAsync(async () => {
           for (let y = lastSeededYear + 1; y <= year + 3; y += 1) {
             for (const holiday of brazilianNationalHolidays(y)) {
