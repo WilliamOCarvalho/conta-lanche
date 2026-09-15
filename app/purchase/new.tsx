@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Image, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -11,6 +11,7 @@ import { formatCurrencyInput, parseBRLToCents } from '../../src/services/money';
 import { formatDate, parseBRDate, todayISO } from '../../src/services/dates';
 import { persistPhoto, removePhoto } from '../../src/services/photos';
 import { colors } from '../../src/theme';
+import { maskPixKey, validatePixKey } from '../../src/services/pix';
 
 type Stage = 'capture' | 'preview' | 'form';
 
@@ -30,16 +31,29 @@ export default function NewPurchaseScreen() {
   const [newVendorModal, setNewVendorModal] = useState(false);
   const [vendorName, setVendorName] = useState('');
   const [vendorPixKey, setVendorPixKey] = useState('');
+  const [vendorPixBeneficiaryName, setVendorPixBeneficiaryName] = useState('');
   const [vendorContact, setVendorContact] = useState('');
   const [saving, setSaving] = useState(false);
   const [opening, setOpening] = useState(false);
 
-  useEffect(() => {
-    void listVendors(true).then(setVendors);
-    void takePhoto();
+  const pickPhoto = useCallback(async () => {
+    try {
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert('Galeria não autorizada', 'Permita o acesso às fotos nas configurações do aparelho.');
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.8, allowsEditing: false });
+      if (!result.canceled && result.assets[0]) {
+        setPhoto(result.assets[0].uri);
+        setStage('preview');
+      }
+    } catch (error) {
+      Alert.alert('Não foi possível abrir a galeria', error instanceof Error ? error.message : 'Tente novamente.');
+    }
   }, []);
 
-  async function takePhoto() {
+  const takePhoto = useCallback(async () => {
     setOpening(true);
     try {
       const permission = await ImagePicker.requestCameraPermissionsAsync();
@@ -60,24 +74,13 @@ export default function NewPurchaseScreen() {
     } finally {
       setOpening(false);
     }
-  }
+  }, [pickPhoto]);
 
-  async function pickPhoto() {
-    try {
-      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (!permission.granted) {
-        Alert.alert('Galeria não autorizada', 'Permita o acesso às fotos nas configurações do aparelho.');
-        return;
-      }
-      const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.8, allowsEditing: false });
-      if (!result.canceled && result.assets[0]) {
-        setPhoto(result.assets[0].uri);
-        setStage('preview');
-      }
-    } catch (error) {
-      Alert.alert('Não foi possível abrir a galeria', error instanceof Error ? error.message : 'Tente novamente.');
-    }
-  }
+  useEffect(() => {
+    void listVendors(true).then(setVendors);
+    const cameraTimer = setTimeout(() => { void takePhoto(); }, 0);
+    return () => clearTimeout(cameraTimer);
+  }, [takePhoto]);
 
   const loadVendors = async () => setVendors(await listVendors(true));
 
@@ -86,14 +89,20 @@ export default function NewPurchaseScreen() {
       Alert.alert('Nome obrigatório', 'Informe o nome do vendedor.');
       return;
     }
+    const pixValidation = vendorPixKey.trim() ? validatePixKey(vendorPixKey) : null;
+    if (pixValidation && !pixValidation.valid) {
+      Alert.alert('Chave Pix inválida', pixValidation.error);
+      return;
+    }
     try {
-      const id = await saveVendor({ name: vendorName, pixKey: vendorPixKey, contact: vendorContact });
+      const id = await saveVendor({ name: vendorName, pixKey: pixValidation?.normalized, pixBeneficiaryName: vendorPixBeneficiaryName, contact: vendorContact });
       await loadVendors();
       setVendorId(id);
       setNewVendorModal(false);
       setVendorModal(false);
       setVendorName('');
       setVendorPixKey('');
+      setVendorPixBeneficiaryName('');
       setVendorContact('');
     } catch (error) {
       Alert.alert('Não foi possível cadastrar', error instanceof Error ? error.message : 'Confira os dados e tente novamente.');
@@ -180,7 +189,7 @@ export default function NewPurchaseScreen() {
               <Text style={[styles.selectText, !vendorId && { color: colors.muted }]}>{vendors.find((vendor) => vendor.id === vendorId)?.name ?? 'Selecionar vendedor'}</Text>
               <Ionicons name="chevron-down" color={colors.muted} size={18} />
             </View>
-            {vendors.find((vendor) => vendor.id === vendorId)?.pixKey ? <Text style={styles.pixNote}>Chave Pix: {vendors.find((vendor) => vendor.id === vendorId)?.pixKey}</Text> : null}
+            {vendors.find((vendor) => vendor.id === vendorId)?.pixKey ? <Text style={styles.pixNote}>Chave Pix: {maskPixKey(vendors.find((vendor) => vendor.id === vendorId)?.pixKey ?? '')}</Text> : null}
           </Pressable>
           <Field label="Data da compra (DD/MM/AAAA) *" value={date} onChangeText={setDate} placeholder="14/09/2026" keyboardType="numbers-and-punctuation" />
           <Field label="Valor em reais *" value={amount} onChangeText={(value) => setAmount(formatCurrencyInput(value))} placeholder="0,00" keyboardType="decimal-pad" />
@@ -205,7 +214,7 @@ export default function NewPurchaseScreen() {
               <Pressable key={vendor.id} onPress={() => { setVendorId(vendor.id); setVendorModal(false); }} style={styles.vendorOption}>
                 <View style={{ flex: 1, gap: 3 }}>
                   <Text style={styles.vendorOptionText}>{vendor.name}</Text>
-                  {vendor.pixKey ? <Text style={styles.pixNote}>{vendor.pixKey}</Text> : null}
+                  {vendor.pixKey ? <Text style={styles.pixNote}>{maskPixKey(vendor.pixKey)}</Text> : null}
                 </View>
                 {vendorId === vendor.id ? <Ionicons name="checkmark-circle" size={20} color={colors.green} /> : null}
               </Pressable>
@@ -226,6 +235,7 @@ export default function NewPurchaseScreen() {
               <Text style={styles.sheetTitle}>Novo vendedor</Text>
               <Field label="Nome *" value={vendorName} onChangeText={setVendorName} placeholder="Nome do colega" autoFocus />
               <Field label="Chave Pix" value={vendorPixKey} onChangeText={setVendorPixKey} placeholder="CPF, e-mail, telefone ou chave aleatória" autoCapitalize="none" />
+              <Field label="Nome do beneficiário Pix" value={vendorPixBeneficiaryName} onChangeText={setVendorPixBeneficiaryName} placeholder="Somente se for diferente do vendedor" />
               <Field label="Telefone ou contato" value={vendorContact} onChangeText={setVendorContact} placeholder="Opcional" />
               <View style={styles.previewButtons}>
                 <Button title="Cancelar" variant="secondary" onPress={() => setNewVendorModal(false)} />

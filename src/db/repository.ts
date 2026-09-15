@@ -20,15 +20,15 @@ const purchaseSelect = `SELECT p.*, v.name AS vendor_name FROM purchases p JOIN 
 
 export async function listVendors(activeOnly = false): Promise<Vendor[]> {
   const db = await getDatabase();
-  const rows = await db.getAllAsync<{ id: string; name: string; pix_key: string | null; contact: string | null; observation: string | null; active: number; created_at: string; updated_at: string }>(
+  const rows = await db.getAllAsync<{ id: string; name: string; pix_key: string | null; pix_beneficiary_name: string | null; contact: string | null; observation: string | null; active: number; created_at: string; updated_at: string }>(
     `SELECT * FROM vendors ${activeOnly ? 'WHERE active = 1' : ''} ORDER BY active DESC, name COLLATE NOCASE`);
-  return rows.map((r) => ({ id: r.id, name: r.name, pixKey: r.pix_key, contact: r.contact, observation: r.observation, active: r.active === 1, createdAt: r.created_at, updatedAt: r.updated_at }));
+  return rows.map((r) => ({ id: r.id, name: r.name, pixKey: r.pix_key, pixBeneficiaryName: r.pix_beneficiary_name, contact: r.contact, observation: r.observation, active: r.active === 1, createdAt: r.created_at, updatedAt: r.updated_at }));
 }
 
-export async function saveVendor(input: { id?: string; name: string; pixKey?: string; contact?: string; observation?: string; active?: boolean }): Promise<string> {
+export async function saveVendor(input: { id?: string; name: string; pixKey?: string; pixBeneficiaryName?: string; contact?: string; observation?: string; active?: boolean }): Promise<string> {
   const db = await getDatabase(), id = input.id ?? newId(), now = nowISO();
-  if (input.id) await db.runAsync('UPDATE vendors SET name=?, pix_key=?, contact=?, observation=?, active=?, updated_at=? WHERE id=?', input.name.trim(), input.pixKey?.trim() || null, input.contact?.trim() || null, input.observation?.trim() || null, input.active === false ? 0 : 1, now, id);
-  else await db.runAsync('INSERT INTO vendors (id,name,pix_key,contact,observation,active,created_at,updated_at) VALUES (?,?,?,?,?,1,?,?)', id, input.name.trim(), input.pixKey?.trim() || null, input.contact?.trim() || null, input.observation?.trim() || null, now, now);
+  if (input.id) await db.runAsync('UPDATE vendors SET name=?, pix_key=?, pix_beneficiary_name=?, contact=?, observation=?, active=?, updated_at=? WHERE id=?', input.name.trim(), input.pixKey?.trim() || null, input.pixBeneficiaryName?.trim() || null, input.contact?.trim() || null, input.observation?.trim() || null, input.active === false ? 0 : 1, now, id);
+  else await db.runAsync('INSERT INTO vendors (id,name,pix_key,pix_beneficiary_name,contact,observation,active,created_at,updated_at) VALUES (?,?,?,?,?,?,1,?,?)', id, input.name.trim(), input.pixKey?.trim() || null, input.pixBeneficiaryName?.trim() || null, input.contact?.trim() || null, input.observation?.trim() || null, now, now);
   return id;
 }
 
@@ -37,7 +37,7 @@ export async function setVendorActive(id: string, active: boolean) {
 }
 
 export async function listPurchases(filters: PurchaseFilters = {}): Promise<Purchase[]> {
-  const clauses: string[] = [], values: Array<string | number> = [];
+  const clauses: string[] = [], values: (string | number)[] = [];
   if (filters.from) { clauses.push('p.purchase_date >= ?'); values.push(filters.from); }
   if (filters.to) { clauses.push('p.purchase_date <= ?'); values.push(filters.to); }
   if (filters.vendorId) { clauses.push('p.vendor_id = ?'); values.push(filters.vendorId); }
@@ -125,7 +125,7 @@ export async function setPurchasesPending(ids: string[]): Promise<void> {
   });
 }
 
-export async function listPayments(): Promise<Array<Payment & { vendorName: string; purchaseCount: number }>> {
+export async function listPayments(): Promise<(Payment & { vendorName: string; purchaseCount: number })[]> {
   const db = await getDatabase();
   const rows = await db.getAllAsync<{ id: string; vendor_id: string; reference_period: string; payment_date: string; total_cents: number; observation: string | null; created_at: string; vendor_name: string; purchase_count: number }>(
     'SELECT pay.*, v.name AS vendor_name, COUNT(pp.purchase_id) AS purchase_count FROM payments pay JOIN vendors v ON v.id=pay.vendor_id LEFT JOIN payment_purchases pp ON pp.payment_id=pay.id GROUP BY pay.id ORDER BY pay.payment_date DESC, pay.created_at DESC');
@@ -151,12 +151,16 @@ export async function getSetting(key: string, fallback: string): Promise<string>
   const row = await db.getFirstAsync<{ value: string | null }>('SELECT value FROM settings WHERE key=?', key);
   return row?.value?.trim() || fallback;
 }
+export async function saveSetting(key: string, value: string): Promise<void> {
+  const db = await getDatabase();
+  await db.runAsync('INSERT OR REPLACE INTO settings (key,value) VALUES (?,?)', key, value);
+}
 export async function saveHoliday(input: { date: string; description: string; type: Holiday['type'] }) {
   const db = await getDatabase(); await db.runAsync('INSERT OR REPLACE INTO non_working_days (id,date,description,type) VALUES (COALESCE((SELECT id FROM non_working_days WHERE date=?),?),?,?,?)', input.date, newId(), input.date, input.description.trim(), input.type);
 }
 export async function deleteHoliday(id: string) { const db = await getDatabase(); await db.runAsync('DELETE FROM non_working_days WHERE id=?', id); }
 
-export type BackupData = { version: 2; vendors: Vendor[]; purchases: Purchase[]; payments: Payment[]; paymentLinks: Array<{ paymentId: string; purchaseId: string }>; holidays: Holiday[]; settings: Array<{ key: string; value: string }>; };
+export type BackupData = { version: 2; vendors: Vendor[]; purchases: Purchase[]; payments: Payment[]; paymentLinks: { paymentId: string; purchaseId: string }[]; holidays: Holiday[]; settings: { key: string; value: string }[]; };
 export async function readBackupData(): Promise<BackupData> {
   const db = await getDatabase();
   const [vendors, purchases, payments, paymentLinks, holidays, settings] = await Promise.all([
@@ -165,11 +169,11 @@ export async function readBackupData(): Promise<BackupData> {
   return { version: 2, vendors, purchases, payments: payments.map((p) => ({ id: p.id, vendorId: p.vendorId, referencePeriod: p.referencePeriod, paymentDate: p.paymentDate, totalCents: p.totalCents, observation: p.observation, createdAt: p.createdAt })), paymentLinks: paymentLinks.map((p) => ({ paymentId: p.payment_id, purchaseId: p.purchase_id })), holidays, settings };
 }
 
-export async function replaceWithBackup(data: BackupData, photos: Array<{ oldPath: string; newPath: string }>) {
+export async function replaceWithBackup(data: BackupData, photos: { oldPath: string; newPath: string }[]) {
   const db = await getDatabase(), pathMap = new Map(photos.map((p) => [p.oldPath, p.newPath]));
   await db.withTransactionAsync(async () => {
     await db.execAsync('DELETE FROM payment_purchases; DELETE FROM payments; DELETE FROM purchases; DELETE FROM vendors; DELETE FROM non_working_days; DELETE FROM settings;');
-    for (const v of data.vendors) await db.runAsync('INSERT INTO vendors (id,name,pix_key,contact,observation,active,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)', v.id, v.name, v.pixKey ?? null, v.contact, v.observation, v.active ? 1 : 0, v.createdAt, v.updatedAt);
+    for (const v of data.vendors) await db.runAsync('INSERT INTO vendors (id,name,pix_key,pix_beneficiary_name,contact,observation,active,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)', v.id, v.name, v.pixKey ?? null, v.pixBeneficiaryName ?? null, v.contact, v.observation, v.active ? 1 : 0, v.createdAt, v.updatedAt);
     for (const p of data.purchases) await db.runAsync('INSERT INTO purchases VALUES (?,?,?,?,?,?,?,?,?,?,?)', p.id, p.vendorId, p.description, p.observation, p.purchaseDate, p.amountCents, pathMap.get(p.photoPath) ?? p.photoPath, p.paymentStatus, p.paymentDate, p.createdAt, p.updatedAt);
     for (const p of data.payments) await db.runAsync('INSERT INTO payments VALUES (?,?,?,?,?,?,?)', p.id, p.vendorId, p.referencePeriod, p.paymentDate, p.totalCents, p.observation, p.createdAt);
     for (const link of data.paymentLinks) await db.runAsync('INSERT INTO payment_purchases (payment_id,purchase_id) VALUES (?,?)', link.paymentId, link.purchaseId);

@@ -62,6 +62,13 @@ async function migrate(db: SQLite.SQLiteDatabase) {
     await db.execAsync('PRAGMA user_version = 3;');
     version = 3;
   }
+  if (version < 4) {
+    // Migration 004: optional beneficiary name used in static Pix payloads.
+    const vendorColumns = await db.getAllAsync<{ name: string }>('PRAGMA table_info(vendors)');
+    if (!vendorColumns.some((column) => column.name === 'pix_beneficiary_name')) await db.execAsync('ALTER TABLE vendors ADD COLUMN pix_beneficiary_name TEXT;');
+    await db.execAsync('PRAGMA user_version = 4;');
+    version = 4;
+  }
   // Keep these small local-data tables available even if an older build wrote
   // an incorrect user_version before completing its migration.
   await db.execAsync(`

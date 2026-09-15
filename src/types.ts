@@ -1,6 +1,6 @@
 export type PaymentStatus = 'pending' | 'paid';
 export type Vendor = {
-  id: string; name: string; pixKey: string | null; contact: string | null; observation: string | null;
+  id: string; name: string; pixKey: string | null; pixBeneficiaryName: string | null; contact: string | null; observation: string | null;
   active: boolean; createdAt: string; updatedAt: string;
 };
 export type Purchase = {

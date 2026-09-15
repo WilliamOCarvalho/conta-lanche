@@ -55,12 +55,13 @@ export async function restoreBackup(): Promise<{ purchaseCount: number } | null>
   const jsonFile = zip.file('backup.json');
   if (!jsonFile) throw new Error('O arquivo não contém os dados de backup.');
   const raw = JSON.parse(await jsonFile.async('string')) as Omit<BackupData, 'version' | 'vendors'> & {
-    version: number; vendors: Array<Omit<Vendor, 'pixKey'> & { pixKey?: unknown }>;
+    version: number; vendors: (Omit<Vendor, 'pixKey' | 'pixBeneficiaryName'> & { pixKey?: unknown; pixBeneficiaryName?: unknown })[];
   };
   const valid = (raw.version === 1 || raw.version === 2) && Array.isArray(raw.vendors) && Array.isArray(raw.purchases)
     && Array.isArray(raw.payments) && Array.isArray(raw.paymentLinks) && Array.isArray(raw.holidays) && Array.isArray(raw.settings)
     && raw.vendors.every((v) => typeof v.id === 'string' && typeof v.name === 'string' && typeof v.active === 'boolean'
-      && (v.pixKey === undefined || v.pixKey === null || typeof v.pixKey === 'string'))
+      && (v.pixKey === undefined || v.pixKey === null || typeof v.pixKey === 'string')
+      && (v.pixBeneficiaryName === undefined || v.pixBeneficiaryName === null || typeof v.pixBeneficiaryName === 'string'))
     && raw.purchases.every((p) => typeof p.id === 'string' && typeof p.vendorId === 'string' && Number.isSafeInteger(p.amountCents) && p.amountCents > 0 && (p.paymentStatus === 'paid' || p.paymentStatus === 'pending') && typeof p.photoPath === 'string')
     && raw.payments.every((p) => typeof p.id === 'string' && typeof p.vendorId === 'string' && Number.isSafeInteger(p.totalCents))
     && raw.paymentLinks.every((link) => typeof link.paymentId === 'string' && typeof link.purchaseId === 'string')
@@ -69,7 +70,7 @@ export async function restoreBackup(): Promise<{ purchaseCount: number } | null>
   if (!valid) throw new Error('Formato de backup inválido ou incompatível.');
   const data: BackupData = {
     ...raw, version: 2,
-    vendors: raw.vendors.map((vendor) => ({ ...vendor, pixKey: typeof vendor.pixKey === 'string' ? vendor.pixKey : null })),
+    vendors: raw.vendors.map((vendor) => ({ ...vendor, pixKey: typeof vendor.pixKey === 'string' ? vendor.pixKey : null, pixBeneficiaryName: typeof vendor.pixBeneficiaryName === 'string' ? vendor.pixBeneficiaryName : null })),
   };
   const vendorIds = new Set(data.vendors.map((v) => v.id)), paymentIds = new Set(data.payments.map((p) => p.id)), purchaseIds = new Set(data.purchases.map((p) => p.id));
   if (data.purchases.some((p) => !vendorIds.has(p.vendorId)) || data.payments.some((p) => !vendorIds.has(p.vendorId))
@@ -87,7 +88,7 @@ export async function restoreBackup(): Promise<{ purchaseCount: number } | null>
     || data.payments.some((p) => paymentSums.get(p.id) !== p.totalCents)) throw new Error('Os totais ou status de pagamento do backup não conferem.');
   for (const purchase of data.purchases) if (!zip.file(`photos/${purchase.id}.jpg`)) throw new Error(`A foto da compra ${purchase.id} não foi encontrada no backup.`);
   const previousBackup = await readBackupData();
-  const restored: Array<{ oldPath: string; newPath: string }> = [];
+  const restored: { oldPath: string; newPath: string }[] = [];
   try {
     for (const purchase of data.purchases) {
       const image = zip.file(`photos/${purchase.id}.jpg`);
