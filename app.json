@@ -7,7 +7,6 @@
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "icon": "./assets/icon.png",
-    "newArchEnabled": true,
     "plugins": [
       "expo-router",
       [
@@ -19,10 +18,10 @@
       [
         "expo-splash-screen",
         {
-          "image": "./assets/splash-icon.png",
+          "image": "./assets/icon.png",
           "resizeMode": "contain",
           "backgroundColor": "#F7F8F6",
-          "imageWidth": 180
+          "imageWidth": 220
         }
       ],
       "expo-system-ui",
@@ -33,11 +32,12 @@
           "cameraPermission": "Permita o uso da câmera para fotografar um lanche.",
           "microphonePermission": false
         }
-      ]
+      ],
+      "expo-sharing"
     ],
     "android": {
       "package": "br.com.contalanche.app",
-      "versionCode": 2,
+      "versionCode": 3,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon-foreground.png",
         "backgroundColor": "#246B4B"

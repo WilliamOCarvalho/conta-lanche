@@ -16,6 +16,14 @@ export default function RootLayout() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    let mounted = true;
+    const fallback = setTimeout(() => {
+      if (!mounted) return;
+      setError('A inicialização demorou mais que o esperado. Feche e abra o aplicativo novamente.');
+      setReady(true);
+      void SplashScreen.hideAsync().catch(() => undefined);
+    }, 10000);
+
     void (async () => {
       try {
         const db = await getDatabase();
@@ -30,13 +38,22 @@ export default function RootLayout() {
           }
           if (lastSeededYear < year + 3) await db.runAsync("INSERT OR REPLACE INTO settings (key,value) VALUES ('national_holidays_seeded_through',?)", String(year + 3));
         });
+        if (mounted) setError(null);
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Não foi possível abrir o banco local.');
       } finally {
-        setReady(true);
-        await SplashScreen.hideAsync().catch(() => undefined);
+        clearTimeout(fallback);
+        if (mounted) {
+          setReady(true);
+          await SplashScreen.hideAsync().catch(() => undefined);
+        }
       }
     })();
+
+    return () => {
+      mounted = false;
+      clearTimeout(fallback);
+    };
   }, []);
 
   return <SafeAreaProvider><StatusBar style="dark" />
