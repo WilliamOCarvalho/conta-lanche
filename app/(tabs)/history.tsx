@@ -3,7 +3,7 @@ import { Alert, KeyboardAvoidingView, Modal, Platform, Pressable, StyleSheet, Te
 import { useFocusEffect, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
-import { getSetting, listPayments, listPurchases, listVendors, saveSetting, setPurchasesPaid } from '../../src/db/repository';
+import { deletePurchase, getSetting, listPayments, listPurchases, listVendors, saveSetting, setPurchasesPaid } from '../../src/db/repository';
 import type { Purchase, Vendor } from '../../src/types';
 import { formatBRL, formatCurrencyInput, parseBRLToCents } from '../../src/services/money';
 import { formatDate, monthRange, parseBRDate, todayISO } from '../../src/services/dates';
@@ -11,6 +11,7 @@ import { consolidatePixPurchases, generatePixPayload, maskPixKey, normalizePixTe
 import { Button, Card, EmptyState, Field, PageHeader, Screen, SectionTitle } from '../../src/components/ui';
 import { PurchaseCard } from '../../src/components/PurchaseCard';
 import { colors } from '../../src/theme';
+import { removePhoto } from '../../src/services/photos';
 
 const months = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
 const shift = (date: Date, step: number) => new Date(date.getFullYear(), date.getMonth() + step, 1, 12);
@@ -38,7 +39,7 @@ export default function HistoryScreen() {
   }, [items, selected]);
   const pixSelection = useMemo(() => consolidatePixPurchases(selectedItems), [selectedItems]);
   const selectedVendor = pixSelection.valid ? vendors.find((vendor) => vendor.id === pixSelection.summary.vendorId) : undefined;
-  const selectedPixKey = selectedVendor?.pixKey ? validatePixKey(selectedVendor.pixKey) : null;
+  const selectedPixKey = selectedVendor?.pixKey ? validatePixKey(selectedVendor.pixKey, selectedVendor.pixKeyType) : null;
   const canStartPix = Boolean(selectedVendor?.pixKey && selectedPixKey?.valid);
   const visiblePending = items.filter((item) => item.paymentStatus === 'pending');
   const allVisibleSelected = visiblePending.length > 0 && visiblePending.every((item) => selected.includes(item.id));
@@ -74,7 +75,7 @@ export default function HistoryScreen() {
     if (!selection.valid) { Alert.alert('Não foi possível gerar o Pix', selection.error); return; }
     const vendor = vendors.find((item) => item.id === selection.summary.vendorId);
     if (!vendor?.pixKey) { Alert.alert('Vendedor sem chave Pix', 'Cadastre uma chave Pix válida para este vendedor.'); return; }
-    const key = validatePixKey(vendor.pixKey);
+    const key = validatePixKey(vendor.pixKey, vendor.pixKeyType);
     if (!key.valid) { Alert.alert('Chave Pix inválida', key.error); return; }
     if (!pixCity.trim()) { setPixCityDraft(''); setCityModal(true); return; }
     setConfirmPixModal(true);
@@ -94,7 +95,7 @@ export default function HistoryScreen() {
     const validation = validatePixGeneration(selectedItems, selectedVendor, pixCity);
     if (!validation.valid || !selectedVendor?.pixKey) { Alert.alert('Não foi possível gerar o Pix', validation.valid ? 'Vendedor sem chave Pix.' : validation.error); return; }
     try {
-      const payload = generatePixPayload({ pixKey: selectedVendor.pixKey, amountCents: validation.summary.totalCents, beneficiaryName: selectedVendor.pixBeneficiaryName || selectedVendor.name, city: pixCity });
+      const payload = generatePixPayload({ pixKey: selectedVendor.pixKey, pixKeyType: selectedVendor.pixKeyType, amountCents: validation.summary.totalCents, beneficiaryName: selectedVendor.pixBeneficiaryName || selectedVendor.name, city: pixCity });
       setPixPayload(payload); setConfirmPixModal(false);
     } catch (error) { Alert.alert('Falha ao gerar o código', error instanceof Error ? error.message : 'Confira os dados e tente novamente.'); }
   };
@@ -106,6 +107,12 @@ export default function HistoryScreen() {
     } catch { Alert.alert('Falha ao copiar', 'Não foi possível copiar para a área de transferência. Tente novamente.'); }
   };
 
+  const remove = (item: Purchase) => Alert.alert(
+    'Excluir esta compra?',
+    `Vendedor: ${item.vendorName}\nData: ${formatDate(item.purchaseDate)}\n${item.description ? `Descrição: ${item.description}\n` : ''}Valor: ${formatBRL(item.amountCents)}\n\nEssa ação removerá a compra do histórico e dos totais. Não será possível desfazer.`,
+    [{ text: 'Cancelar', style: 'cancel' }, { text: 'Excluir compra', style: 'destructive', onPress: () => { void (async () => { try { const photoPath = await deletePurchase(item.id); await removePhoto(photoPath).catch(() => undefined); setSelected((previous) => previous.filter((id) => id !== item.id)); load(); } catch { Alert.alert('Erro', 'Não foi possível excluir a compra.'); } })(); } }],
+  );
+
   return <Screen>
     <PageHeader title="Histórico" subtitle="Todas as compras em um só lugar." action={<Pressable onPress={() => router.push('/purchase/new')} style={styles.iconButton}><Ionicons name="add" size={24} color="#fff" /></Pressable>} />
     <Card style={styles.monthCard}><Pressable onPress={() => { setCustomPeriod(false); setMonth(shift(month, -1)); }} style={styles.arrow}><Ionicons name="chevron-back" color={colors.green} size={20} /></Pressable><View style={{ alignItems: 'center' }}><Text style={styles.monthLabel}>{customPeriod ? 'PERÍODO PERSONALIZADO' : 'MÊS DAS COMPRAS'}</Text><Text style={styles.month}>{customPeriod ? `${formatDate(from)} – ${formatDate(to)}` : `${months[month.getMonth()]} ${month.getFullYear()}`}</Text></View><Pressable onPress={() => { setCustomPeriod(false); setMonth(shift(month, 1)); }} style={styles.arrow}><Ionicons name="chevron-forward" color={colors.green} size={20} /></Pressable></Card>
@@ -116,12 +123,12 @@ export default function HistoryScreen() {
     {visiblePending.length ? <Pressable onPress={toggleAllVisible} style={styles.selectAll}><Ionicons name={allVisibleSelected ? 'checkbox' : 'square-outline'} size={19} color={colors.green} /><Text style={styles.selectAllText}>{allVisibleSelected ? 'Desmarcar compras visíveis' : 'Selecionar todas as visíveis'}</Text></Pressable> : null}
     {pixSelection.valid && selectedVendor ? <Card style={styles.summary}><Text style={styles.summaryVendor}>{selectedVendor.name}</Text><Text style={styles.summaryText}>{pixSelection.summary.count} {pixSelection.summary.count === 1 ? 'compra selecionada' : 'compras selecionadas'}</Text><Text style={styles.summaryText}>Período: {formatDate(pixSelection.summary.from)} a {formatDate(pixSelection.summary.to)}</Text><Text style={styles.summaryTotal}>Total: {formatBRL(pixSelection.summary.totalCents)}</Text>{!selectedVendor.pixKey ? <Text style={styles.pixError}>Cadastre uma chave Pix para gerar o código.</Text> : selectedPixKey && !selectedPixKey.valid ? <Text style={styles.pixError}>{selectedPixKey.error}</Text> : null}<Button title="Gerar Pix Copia e Cola" onPress={startPix} disabled={!canStartPix} icon={<Ionicons name="copy-outline" size={18} color="#fff" />} /><Button title={`Marcar ${selectedItems.length} como paga${selectedItems.length > 1 ? 's' : ''}`} variant="secondary" onPress={() => { setPayDate(formatDate(todayISO())); setPayModal(true); }} icon={<Ionicons name="checkmark-circle-outline" size={19} color={colors.green} />} /></Card> : null}
     <SectionTitle>{items.length} {items.length === 1 ? 'compra' : 'compras'}</SectionTitle>
-    {items.length ? <View style={{ gap: 9 }}>{items.map((item) => <PurchaseCard key={item.id} item={item} onPress={() => router.push({ pathname: '/purchase/[id]', params: { id: item.id } })} selected={selected.includes(item.id)} onToggle={item.paymentStatus === 'pending' ? () => togglePurchase(item) : undefined} />)}</View> : <Card><EmptyState title="Nenhuma compra por aqui" detail="Ajuste os filtros ou registre um lanche novo." icon={<Ionicons name="receipt-outline" size={30} color={colors.green} />} /></Card>}
+    {items.length ? <View style={{ gap: 9 }}>{items.map((item) => <PurchaseCard key={item.id} item={item} onPress={() => router.push({ pathname: '/purchase/[id]', params: { id: item.id } })} onDelete={() => remove(item)} selected={selected.includes(item.id)} onToggle={item.paymentStatus === 'pending' ? () => togglePurchase(item) : undefined} />)}</View> : <Card><EmptyState title="Nenhuma compra por aqui" detail="Ajuste os filtros ou registre um lanche novo." icon={<Ionicons name="receipt-outline" size={30} color={colors.green} />} /></Card>}
     <View style={{ gap: 10 }}><SectionTitle>Histórico de pagamentos</SectionTitle>{payments.length ? payments.slice(0, 12).map((payment) => <Card key={payment.id} style={styles.paymentRow}><View style={{ flex: 1 }}><Text style={styles.paymentVendor}>{payment.vendorName}</Text><Text style={styles.paymentMeta}>{formatDate(payment.paymentDate)} · {payment.purchaseCount} {payment.purchaseCount === 1 ? 'compra' : 'compras'}</Text></View><Text style={styles.paymentTotal}>{formatBRL(payment.totalCents)}</Text></Card>) : <Card><Text style={styles.noPayments}>Pagamentos confirmados aparecerão aqui.</Text></Card>}</View>
 
     <Modal visible={payModal} transparent animationType="fade" onRequestClose={() => setPayModal(false)}><View style={styles.modalShade}><View style={styles.modal}><Text style={styles.modalTitle}>Confirmar pagamento</Text><Text style={styles.modalCopy}>Data em que essas compras foram pagas.</Text><Text style={styles.label}>Data do pagamento (DD/MM/AAAA)</Text><TextInput value={payDate} onChangeText={setPayDate} placeholder="14/09/2026" keyboardType="numbers-and-punctuation" style={styles.dateInput} /><View style={styles.modalButtons}><Button title="Voltar" variant="secondary" onPress={() => setPayModal(false)} /><Button title="Confirmar" onPress={() => void paySelected()} /></View></View></View></Modal>
     <Modal visible={cityModal} transparent animationType="fade" onRequestClose={() => setCityModal(false)}><KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.modalShade}><View style={styles.modal}><Text style={styles.modalTitle}>Cidade para geração do Pix</Text><Text style={styles.modalCopy}>Informe uma vez; você poderá alterar esse valor em Ajustes.</Text><Field label="Cidade" value={pixCityDraft} onChangeText={setPixCityDraft} placeholder="Ex.: São Paulo" autoFocus autoCapitalize="words" /><View style={styles.modalButtons}><Button title="Cancelar" variant="secondary" onPress={() => setCityModal(false)} /><Button title="Salvar e continuar" onPress={() => void saveFirstPixCity()} /></View></View></KeyboardAvoidingView></Modal>
-    <Modal visible={confirmPixModal} transparent animationType="fade" onRequestClose={() => setConfirmPixModal(false)}><View style={styles.modalShade}><View style={styles.modal}><Text style={styles.modalTitle}>Pagamento para {selectedVendor?.name}</Text><Text style={styles.modalCopy}>{pixSelection.valid ? `${pixSelection.summary.count} ${pixSelection.summary.count === 1 ? 'compra selecionada' : 'compras selecionadas'}\nTotal: ${formatBRL(pixSelection.summary.totalCents)}` : ''}</Text><Text style={styles.pixKey}>Chave Pix: {selectedVendor?.pixKey ? maskPixKey(selectedVendor.pixKey) : 'não cadastrada'}</Text><Text style={styles.warning}>Confira o nome do destinatário no aplicativo do banco antes de confirmar o pagamento.</Text><View style={styles.modalButtons}><Button title="Cancelar" variant="secondary" onPress={() => setConfirmPixModal(false)} /><Button title="Gerar Pix" onPress={generatePix} /></View></View></View></Modal>
+    <Modal visible={confirmPixModal} transparent animationType="fade" onRequestClose={() => setConfirmPixModal(false)}><View style={styles.modalShade}><View style={styles.modal}><Text style={styles.modalTitle}>Pagamento para {selectedVendor?.name}</Text><Text style={styles.modalCopy}>{pixSelection.valid ? `${pixSelection.summary.count} ${pixSelection.summary.count === 1 ? 'compra selecionada' : 'compras selecionadas'}\nTotal: ${formatBRL(pixSelection.summary.totalCents)}` : ''}</Text><Text style={styles.pixKey}>Chave Pix: {selectedVendor?.pixKey ? maskPixKey(selectedVendor.pixKey, selectedVendor.pixKeyType) : 'não cadastrada'}</Text><Text style={styles.warning}>Confira o nome do destinatário no aplicativo do banco antes de confirmar o pagamento.</Text><View style={styles.modalButtons}><Button title="Cancelar" variant="secondary" onPress={() => setConfirmPixModal(false)} /><Button title="Gerar Pix" onPress={generatePix} /></View></View></View></Modal>
     <Modal visible={Boolean(pixPayload)} transparent animationType="slide" onRequestClose={() => setPixPayload('')}><View style={styles.modalShade}><View style={styles.modal}><Text style={styles.modalTitle}>Pix Copia e Cola</Text><Text style={styles.modalCopy}>O código contém a chave e o valor consolidado. Confira os dados no aplicativo do banco.</Text><TextInput value={pixPayload} editable={false} multiline selectTextOnFocus style={styles.payload} /><Button title="Copiar código Pix" onPress={() => void copyPix()} icon={<Ionicons name="copy-outline" size={18} color="#fff" />} /><Button title="Fechar" variant="quiet" onPress={() => setPixPayload('')} /></View></View></Modal>
   </Screen>;
 }

@@ -1,19 +1,25 @@
 import { useEffect, useState } from 'react';
 import { Stack } from 'expo-router';
+import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
-import { ActivityIndicator, Text, View } from 'react-native';
+import { Text, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { getDatabase } from '../src/db/database';
 import { getSetting } from '../src/db/repository';
 import { brazilianNationalHolidays } from '../src/services/businessDays';
 import { colors } from '../src/theme';
 
+void SplashScreen.preventAutoHideAsync().catch(() => undefined);
+
 export default function RootLayout() {
-  const [ready, setReady] = useState(false), [error, setError] = useState<string | null>(null);
+  const [ready, setReady] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
   useEffect(() => {
     void (async () => {
       try {
-        const db = await getDatabase(), year = new Date().getFullYear();
+        const db = await getDatabase();
+        const year = new Date().getFullYear();
         const storedYear = Number(await getSetting('national_holidays_seeded_through', ''));
         const lastSeededYear = Number.isInteger(storedYear) && storedYear >= 1900 && storedYear <= year + 10 ? storedYear : year - 2;
         await db.withTransactionAsync(async () => {
@@ -24,15 +30,18 @@ export default function RootLayout() {
           }
           if (lastSeededYear < year + 3) await db.runAsync("INSERT OR REPLACE INTO settings (key,value) VALUES ('national_holidays_seeded_through',?)", String(year + 3));
         });
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Não foi possível abrir o banco local.');
+      } finally {
         setReady(true);
-      } catch (e) { setError(e instanceof Error ? e.message : 'Não foi possível abrir o banco local.'); }
+        await SplashScreen.hideAsync().catch(() => undefined);
+      }
     })();
   }, []);
+
   return <SafeAreaProvider><StatusBar style="dark" />
-    {ready ? <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.background } }}>
+    {ready && !error ? <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.background } }}>
       <Stack.Screen name="(tabs)" /><Stack.Screen name="purchase/new" options={{ presentation: 'modal' }} /><Stack.Screen name="purchase/[id]" options={{ presentation: 'modal' }} />
-    </Stack> : <View style={{ flex:  1, backgroundColor: colors.background, alignItems: 'center', justifyContent: 'center', padding: 28 }}>
-      {error ? <Text style={{ color: colors.ink, textAlign: 'center' }}>{error}</Text> : <ActivityIndicator color={colors.green} />}
-    </View>}
+    </Stack> : ready ? <View style={{ flex: 1, backgroundColor: colors.background, alignItems: 'center', justifyContent: 'center', padding: 28 }}><Text style={{ color: colors.ink, textAlign: 'center' }}>{error}</Text></View> : null}
   </SafeAreaProvider>;
 }

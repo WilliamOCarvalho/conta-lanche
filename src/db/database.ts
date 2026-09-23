@@ -69,6 +69,14 @@ async function migrate(db: SQLite.SQLiteDatabase) {
     await db.execAsync('PRAGMA user_version = 4;');
     version = 4;
   }
+  if (version < 5) {
+    // Migration 005: explicit Pix key type. Existing keys remain untouched;
+    // ambiguous numeric keys are intentionally left NULL until the user chooses.
+    const vendorColumns = await db.getAllAsync<{ name: string }>('PRAGMA table_info(vendors)');
+    if (!vendorColumns.some((column) => column.name === 'pix_key_type')) await db.execAsync('ALTER TABLE vendors ADD COLUMN pix_key_type TEXT;');
+    await db.execAsync('PRAGMA user_version = 5;');
+    version = 5;
+  }
   // Keep these small local-data tables available even if an older build wrote
   // an incorrect user_version before completing its migration.
   await db.execAsync(`

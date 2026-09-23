@@ -6,7 +6,7 @@ import { colors, radius } from '../theme';
 import { formatBRL } from '../services/money';
 import { formatDate } from '../services/dates';
 
-export function PurchaseCard({ item, onPress, selected, onToggle }: { item: Purchase; onPress?: () => void; selected?: boolean; onToggle?: () => void }) {
+export function PurchaseCard({ item, onPress, onDelete, selected, onToggle }: { item: Purchase; onPress?: () => void; onDelete?: () => void; selected?: boolean; onToggle?: () => void }) {
   const detail = <View style={styles.detail}>
     <Text style={styles.name} numberOfLines={1}>{item.description || 'Lanche'}</Text>
     <Text style={styles.meta} numberOfLines={1}>{item.vendorName} · {formatDate(item.purchaseDate)}</Text>
@@ -19,6 +19,7 @@ export function PurchaseCard({ item, onPress, selected, onToggle }: { item: Purc
     </Pressable> : null}
     <PhotoViewer uri={item.photoPath} style={styles.photo} accessibilityLabel={`Ampliar foto de ${item.description || 'lanche'}`} />
     {onPress ? <Pressable onPress={onPress} style={({ pressed }) => [styles.detailPressable, pressed && { opacity: 0.75 }]}>{detail}</Pressable> : detail}
+    {onDelete ? <Pressable onPress={onDelete} accessibilityLabel="Excluir compra" style={styles.delete}><Ionicons name="trash-outline" size={18} color={colors.red} /></Pressable> : null}
   </View></View>;
 }
 
@@ -27,7 +28,7 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   check: { paddingVertical: 8, paddingRight: 1 },
   photo: { width: 60, height: 60, borderRadius: 13, backgroundColor: colors.greenLight },
-  detailPressable: { flex: 1 }, detail: { flex: 1, gap: 5 },
+  detailPressable: { flex: 1 }, detail: { flex: 1, gap: 5 }, delete: { width: 34, height: 34, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.redLight },
   name: { color: colors.ink, fontWeight: '800', fontSize: 14 }, meta: { color: colors.muted, fontSize: 12 },
   bottom: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 1 },
   value: { color: colors.ink, fontWeight: '800' }, badge: { paddingHorizontal: 9, paddingVertical: 4, borderRadius: 99 },

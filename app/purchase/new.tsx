@@ -5,13 +5,13 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { listVendors, savePurchase, saveVendor } from '../../src/db/repository';
-import type { Vendor } from '../../src/types';
+import type { PixKeyType, Vendor } from '../../src/types';
 import { Button, Card, Field, PageHeader, Screen } from '../../src/components/ui';
 import { formatCurrencyInput, parseBRLToCents } from '../../src/services/money';
 import { formatDate, parseBRDate, todayISO } from '../../src/services/dates';
 import { persistPhoto, removePhoto } from '../../src/services/photos';
 import { colors } from '../../src/theme';
-import { maskPixKey, validatePixKey } from '../../src/services/pix';
+import { maskPixKey, pixKeyTypeOptions, validatePixKey } from '../../src/services/pix';
 
 type Stage = 'capture' | 'preview' | 'form';
 
@@ -31,8 +31,8 @@ export default function NewPurchaseScreen() {
   const [newVendorModal, setNewVendorModal] = useState(false);
   const [vendorName, setVendorName] = useState('');
   const [vendorPixKey, setVendorPixKey] = useState('');
+  const [vendorPixKeyType, setVendorPixKeyType] = useState<PixKeyType | ''>('');
   const [vendorPixBeneficiaryName, setVendorPixBeneficiaryName] = useState('');
-  const [vendorContact, setVendorContact] = useState('');
   const [saving, setSaving] = useState(false);
   const [opening, setOpening] = useState(false);
 
@@ -89,21 +89,22 @@ export default function NewPurchaseScreen() {
       Alert.alert('Nome obrigatório', 'Informe o nome do vendedor.');
       return;
     }
-    const pixValidation = vendorPixKey.trim() ? validatePixKey(vendorPixKey) : null;
+    if (vendorPixKey.trim() && !vendorPixKeyType) { Alert.alert('Selecione o tipo da chave Pix', 'Escolha o tipo antes de salvar o vendedor.'); return; }
+    const pixValidation = vendorPixKey.trim() ? validatePixKey(vendorPixKey, vendorPixKeyType || null) : null;
     if (pixValidation && !pixValidation.valid) {
       Alert.alert('Chave Pix inválida', pixValidation.error);
       return;
     }
     try {
-      const id = await saveVendor({ name: vendorName, pixKey: pixValidation?.normalized, pixBeneficiaryName: vendorPixBeneficiaryName, contact: vendorContact });
+      const id = await saveVendor({ name: vendorName, pixKey: pixValidation?.normalized, pixKeyType: pixValidation?.type, pixBeneficiaryName: vendorPixBeneficiaryName });
       await loadVendors();
       setVendorId(id);
       setNewVendorModal(false);
       setVendorModal(false);
       setVendorName('');
       setVendorPixKey('');
+      setVendorPixKeyType('');
       setVendorPixBeneficiaryName('');
-      setVendorContact('');
     } catch (error) {
       Alert.alert('Não foi possível cadastrar', error instanceof Error ? error.message : 'Confira os dados e tente novamente.');
     }
@@ -189,7 +190,7 @@ export default function NewPurchaseScreen() {
               <Text style={[styles.selectText, !vendorId && { color: colors.muted }]}>{vendors.find((vendor) => vendor.id === vendorId)?.name ?? 'Selecionar vendedor'}</Text>
               <Ionicons name="chevron-down" color={colors.muted} size={18} />
             </View>
-            {vendors.find((vendor) => vendor.id === vendorId)?.pixKey ? <Text style={styles.pixNote}>Chave Pix: {maskPixKey(vendors.find((vendor) => vendor.id === vendorId)?.pixKey ?? '')}</Text> : null}
+            {vendors.find((vendor) => vendor.id === vendorId)?.pixKey ? <Text style={styles.pixNote}>Chave Pix: {maskPixKey(vendors.find((vendor) => vendor.id === vendorId)?.pixKey ?? '', vendors.find((vendor) => vendor.id === vendorId)?.pixKeyType)}</Text> : null}
           </Pressable>
           <Field label="Data da compra (DD/MM/AAAA) *" value={date} onChangeText={setDate} placeholder="14/09/2026" keyboardType="numbers-and-punctuation" />
           <Field label="Valor em reais *" value={amount} onChangeText={(value) => setAmount(formatCurrencyInput(value))} placeholder="0,00" keyboardType="decimal-pad" />
@@ -214,7 +215,7 @@ export default function NewPurchaseScreen() {
               <Pressable key={vendor.id} onPress={() => { setVendorId(vendor.id); setVendorModal(false); }} style={styles.vendorOption}>
                 <View style={{ flex: 1, gap: 3 }}>
                   <Text style={styles.vendorOptionText}>{vendor.name}</Text>
-                  {vendor.pixKey ? <Text style={styles.pixNote}>{maskPixKey(vendor.pixKey)}</Text> : null}
+                  {vendor.pixKey ? <Text style={styles.pixNote}>{maskPixKey(vendor.pixKey, vendor.pixKeyType)}</Text> : null}
                 </View>
                 {vendorId === vendor.id ? <Ionicons name="checkmark-circle" size={20} color={colors.green} /> : null}
               </Pressable>
@@ -234,9 +235,9 @@ export default function NewPurchaseScreen() {
             >
               <Text style={styles.sheetTitle}>Novo vendedor</Text>
               <Field label="Nome *" value={vendorName} onChangeText={setVendorName} placeholder="Nome do colega" autoFocus />
-              <Field label="Chave Pix" value={vendorPixKey} onChangeText={setVendorPixKey} placeholder="CPF, e-mail, telefone ou chave aleatória" autoCapitalize="none" />
+              <Text style={styles.pixTypeLabel}>Tipo da chave Pix {vendorPixKey.trim() ? '*' : '(opcional)'}</Text><View style={styles.pixTypeRow}>{pixKeyTypeOptions.map((option) => <Pressable key={option.value} onPress={() => setVendorPixKeyType(option.value)} style={[styles.pixType, vendorPixKeyType === option.value && styles.pixTypeActive]}><Text style={[styles.pixTypeText, vendorPixKeyType === option.value && styles.pixTypeTextActive]}>{option.label}</Text></Pressable>)}</View><Field label="Chave Pix" value={vendorPixKey} onChangeText={setVendorPixKey} placeholder={vendorPixKeyType === 'phone' ? 'DDD e número ou +55...' : 'Escolha o tipo antes de informar'} autoCapitalize="none" keyboardType={vendorPixKeyType === 'email' ? 'email-address' : vendorPixKeyType ? 'phone-pad' : 'default'} />
               <Field label="Nome do beneficiário Pix" value={vendorPixBeneficiaryName} onChangeText={setVendorPixBeneficiaryName} placeholder="Somente se for diferente do vendedor" />
-              <Field label="Telefone ou contato" value={vendorContact} onChangeText={setVendorContact} placeholder="Opcional" />
+
               <View style={styles.previewButtons}>
                 <Button title="Cancelar" variant="secondary" onPress={() => setNewVendorModal(false)} />
                 <Button title="Salvar" onPress={() => void addVendor()} />
@@ -277,5 +278,5 @@ const styles = StyleSheet.create({
   vendorFormShade: { flex: 1, justifyContent: 'flex-end', backgroundColor: '#15231F88' },
   vendorFormKeyboard: { flex: 1, justifyContent: 'flex-end' },
   quickFormScroll: { flexGrow: 0, maxHeight: '92%', marginHorizontal: 20, marginTop: 20, overflow: 'hidden', borderRadius: 22 },
-  quickForm: { backgroundColor: colors.background, padding: 20, gap: 14 },
+  quickForm: { backgroundColor: colors.background, padding: 20, gap: 14 }, pixTypeLabel: { color: colors.ink, fontSize: 13, fontWeight: '700' }, pixTypeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 7 }, pixType: { borderRadius: 99, paddingHorizontal: 11, paddingVertical: 8, backgroundColor: '#EEF0ED' }, pixTypeActive: { backgroundColor: colors.greenLight, borderColor: colors.green, borderWidth: 1 }, pixTypeText: { color: colors.muted, fontSize: 12, fontWeight: '700' }, pixTypeTextActive: { color: colors.green },
 });

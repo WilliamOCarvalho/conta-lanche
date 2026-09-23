@@ -16,6 +16,15 @@
           "enableFTS": false
         }
       ],
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "resizeMode": "contain",
+          "backgroundColor": "#F7F8F6",
+          "imageWidth": 180
+        }
+      ],
       "expo-system-ui",
       [
         "expo-image-picker",
